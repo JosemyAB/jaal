@@ -3,6 +3,8 @@ Author: Mohit Mayank
 
 Main class for Jaal network visualization dashboard
 """
+import traceback
+
 # import
 import dash
 import visdcc
@@ -49,20 +51,43 @@ class Jaal:
         graph_data['nodes'] = nodes
         return graph_data
 
-    def _callback_filter_nodes(self, graph_data, filter_nodes_text):
+    def _get_related_nodes(self, found_nodes_ids, edge_df, node_map):
+        nodes = []
+        for found_node_id in found_nodes_ids:
+            nodes.append(node_map[found_node_id])
+
+            # look for related nodes
+            related_nodes_in = edge_df.query(f"`from`=='{found_node_id}'")['to'].tolist()
+            related_nodes_out = edge_df.query(f"`to`=='{found_node_id}'")['from'].tolist()
+
+            # edge_df.drop(edge_df[edge_df['to'].isin(related_nodes_in)].index, inplace=True)
+            edge_df.drop(edge_df[edge_df['from'].isin(related_nodes_out)].index, inplace=True)
+
+            if len(related_nodes_in + related_nodes_out) > 0:
+                nodes += self._get_related_nodes(related_nodes_in + related_nodes_out, edge_df, node_map)
+
+        return nodes
+
+    def _callback_filter_nodes(self, graph_data, filter_nodes_text, add_related_entities):
         """Filter the nodes based on the Python query syntax
         """
         self.filtered_data = self.data.copy()
+
         node_df = pd.DataFrame(self.filtered_data['nodes'])
+        edge_df = pd.DataFrame(self.filtered_data['edges'])
+
+        node_map = {node['id']: node for node in self.filtered_data['nodes']}
+
         try:
-            node_list = node_df.query(filter_nodes_text)['id'].tolist()
-            nodes = []
-            for node in self.filtered_data['nodes']:
-                if node['id'] in node_list:
-                    nodes.append(node)
+            found_nodes_ids = node_df.query(filter_nodes_text)['id'].tolist()
+            nodes = self._get_related_nodes(found_nodes_ids, edge_df, node_map)
+
             self.filtered_data['nodes'] = nodes
+            print(self.filtered_data)
             graph_data = self.filtered_data
-        except:
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
             graph_data = self.data
             print("wrong node filter query!!")
         return graph_data
@@ -271,14 +296,16 @@ class Jaal:
             [Input('search_graph', 'value'),
             Input('filter_nodes', 'value'),
             Input('filter_edges', 'value'),
+             Input('add_related_entities', 'checked'),
             Input('color_nodes', 'value'),
             Input('color_edges', 'value'),
             Input('size_nodes', 'value'),
             Input('size_edges', 'value')],
             [State('graph', 'data')]
         )
-        def setting_pane_callback(search_text, filter_nodes_text, filter_edges_text, 
+        def setting_pane_callback(search_text, filter_nodes_text, filter_edges_text, add_related_entities,
                     color_nodes_value, color_edges_value, size_nodes_value, size_edges_value, graph_data):
+
             # fetch the id of option which triggered
             ctx = dash.callback_context
             # if its the first call
@@ -293,7 +320,7 @@ class Jaal:
                     graph_data = self._callback_search_graph(graph_data, search_text)
                 # In case filter nodes was triggered
                 elif input_id == 'filter_nodes':
-                    graph_data = self._callback_filter_nodes(graph_data, filter_nodes_text)
+                    graph_data = self._callback_filter_nodes(graph_data, filter_nodes_text, add_related_entities)
                 # In case filter edges was triggered
                 elif input_id == 'filter_edges':
                     graph_data = self._callback_filter_edges(graph_data, filter_edges_text)

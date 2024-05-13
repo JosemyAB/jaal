@@ -143,6 +143,12 @@ filter_edge_form = dbc.FormGroup([
     ),
 ])
 
+include_related_entities = dbc.FormGroup([
+    # dbc.Label("Filter edges", html_for="filter_edges"),
+    dbc.Checkbox(id="add_related_entities", checked=True, name="mne veoooo"),
+        " Include related entities",
+])
+
 def get_select_form_layout(id, options, label, description):
     """Creates a select (dropdown) form with provides details
 
@@ -236,7 +242,8 @@ def get_app_layout(graph_data, color_legends=[], directed=False, vis_opts=None):
                             html.Hr(className="my-2"),
                             filter_node_form,
                             filter_edge_form,
-                        ], id="filter-show-toggle", is_open=False),
+                            include_related_entities,
+                        ], id="filter-show-toggle", is_open=True),
                         
                         # ---- color section ----
                         create_row([
