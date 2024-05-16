@@ -16,12 +16,15 @@ import dash_bootstrap_components as dbc
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Input, Output, State
 from .datasets.parse_dataframe import parse_dataframe
-from .layout import get_app_layout, get_distinct_colors, create_color_legend, DEFAULT_COLOR, DEFAULT_NODE_SIZE, DEFAULT_EDGE_SIZE
+from .layout import get_app_layout, get_distinct_colors, create_color_legend, DEFAULT_COLOR, DEFAULT_NODE_SIZE, \
+    DEFAULT_EDGE_SIZE
+
 
 # class
 class Jaal:
     """The main visualization class
     """
+
     def __init__(self, edge_df, node_df=None):
         """
         Parameters
@@ -37,6 +40,10 @@ class Jaal:
         self.filtered_data = self.data.copy()
         self.node_value_color_mapping = {}
         self.edge_value_color_mapping = {}
+        self.add_related_entities = True
+        self.include_related_org = True
+        self.include_related_wf = True
+        self.include_related_tables = True
         print("Done")
 
     def _callback_search_graph(self, graph_data, search_text):
@@ -57,10 +64,12 @@ class Jaal:
             nodes.append(node_map[found_node_id])
 
             # look for related nodes
-            related_nodes_in = edge_df.query(f"`from`=='{found_node_id}'")['to'].tolist()
-            related_nodes_out = edge_df.query(f"`to`=='{found_node_id}'")['from'].tolist()
+            related_nodes_in = self._filter_entities(
+                edge_df.query(f"`from`=='{found_node_id}'")['to'].to_frame('id')).tolist()
+            related_nodes_out = self._filter_entities(
+                edge_df.query(f"`to`=='{found_node_id}'")['from'].to_frame('id')).tolist()
 
-            # edge_df.drop(edge_df[edge_df['to'].isin(related_nodes_in)].index, inplace=True)
+            # Remove the connections from the dataframe to avoid infinite loop
             edge_df.drop(edge_df[edge_df['from'].isin(related_nodes_out)].index, inplace=True)
 
             if len(related_nodes_in + related_nodes_out) > 0:
@@ -68,22 +77,44 @@ class Jaal:
 
         return nodes
 
-    def _callback_filter_nodes(self, graph_data, filter_nodes_text, add_related_entities):
+    def _filter_entities(self, node_df):
+        """ Filter out the nodes selected as not visible from the nodes map to not be included in the graph"""
+
+        if not self.include_related_org:
+            node_df.drop(node_df[node_df['id'].str.contains('org')].index, inplace=True)
+        if not self.include_related_wf:
+            node_df.drop(node_df[node_df['id'].str.contains('wf')].index, inplace=True)
+        if not self.include_related_tables:
+            node_df.drop(node_df[node_df['id'].str.contains('table')].index, inplace=True)
+
+        return node_df['id']
+
+    def _callback_filter_nodes(self, graph_data, filter_nodes_text, add_related_entities, include_related_org,
+                               include_related_wf, include_related_tables):
         """Filter the nodes based on the Python query syntax
         """
+        self.add_related_entities = add_related_entities
+        self.include_related_wf = include_related_wf
+        self.include_related_org = include_related_org
+        self.include_related_tables = include_related_tables
+
         self.filtered_data = self.data.copy()
 
-        node_df = pd.DataFrame(self.filtered_data['nodes'])
-        edge_df = pd.DataFrame(self.filtered_data['edges'])
-
-        node_map = {node['id']: node for node in self.filtered_data['nodes']}
-
         try:
+            nodes = []
+            node_df = pd.DataFrame(self.filtered_data['nodes'])
+            node_map = {node['id']: node for node in self.filtered_data['nodes']}
+
             found_nodes_ids = node_df.query(filter_nodes_text)['id'].tolist()
-            nodes = self._get_related_nodes(found_nodes_ids, edge_df, node_map)
+            # Add the results of the main query
+            for found_node_id in found_nodes_ids:
+                nodes.append(node_map[found_node_id])
+
+            if self.add_related_entities:
+                edge_df = pd.DataFrame(self.filtered_data['edges'])
+                nodes += self._get_related_nodes(found_nodes_ids, edge_df, node_map)
 
             self.filtered_data['nodes'] = nodes
-            print(self.filtered_data)
             graph_data = self.filtered_data
         except Exception as e:
             traceback.print_exc()
@@ -121,7 +152,7 @@ class Jaal:
             print("inside color node", color_nodes_value)
             unique_values = pd.DataFrame(self.data['nodes'])[color_nodes_value].unique()
             colors = get_distinct_colors(len(unique_values))
-            value_color_mapping = {x:y for x, y in zip(unique_values, colors)}
+            value_color_mapping = {x: y for x, y in zip(unique_values, colors)}
             for node in self.data['nodes']:
                 node['color'] = value_color_mapping[node[color_nodes_value]]
         # filter the data currently shown
@@ -129,7 +160,7 @@ class Jaal:
         self.filtered_data['nodes'] = [x for x in self.data['nodes'] if x['id'] in filtered_nodes]
         graph_data = self.filtered_data
         return graph_data, value_color_mapping
-    
+
     def _callback_size_nodes(self, graph_data, size_nodes_value):
 
         # color option is None, revert back all changes
@@ -143,7 +174,7 @@ class Jaal:
             minn = self.scaling_vars['node'][size_nodes_value]['min']
             maxx = self.scaling_vars['node'][size_nodes_value]['max']
             # define the scaling function
-            scale_val = lambda x: 20*(x-minn)/(maxx-minn)
+            scale_val = lambda x: 20 * (x - minn) / (maxx - minn)
             # set size after scaling
             for node in self.data['nodes']:
                 node['size'] = node['size'] + scale_val(node[size_nodes_value])
@@ -164,7 +195,7 @@ class Jaal:
             print("inside color edge", color_edges_value)
             unique_values = pd.DataFrame(self.data['edges'])[color_edges_value].unique()
             colors = get_distinct_colors(len(unique_values))
-            value_color_mapping = {x:y for x, y in zip(unique_values, colors)}
+            value_color_mapping = {x: y for x, y in zip(unique_values, colors)}
             for edge in self.data['edges']:
                 edge['color']['color'] = value_color_mapping[edge[color_edges_value]]
         # filter the data currently shown
@@ -185,7 +216,7 @@ class Jaal:
             minn = self.scaling_vars['edge'][size_edges_value]['min']
             maxx = self.scaling_vars['edge'][size_edges_value]['max']
             # define the scaling function
-            scale_val = lambda x: 20*(x-minn)/(maxx-minn)
+            scale_val = lambda x: 20 * (x - minn) / (maxx - minn)
             # set the size after scaling
             for edge in self.data['edges']:
                 edge['width'] = scale_val(edge[size_edges_value])
@@ -211,8 +242,8 @@ class Jaal:
                     _popover_legend_children.append(
                         # dbc.PopoverBody(f"Key: {key}, Value: {value}")
                         create_color_legend(key, value)
-                        )
-            else: # otherwise add filler
+                    )
+            else:  # otherwise add filler
                 _popover_legend_children.append(dbc.PopoverBody(f"no {title.lower()} colored!"))
             #
             return _popover_legend_children
@@ -244,7 +275,8 @@ class Jaal:
         app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
         # define layout
-        app.layout = get_app_layout(self.data, color_legends=self.get_color_popover_legend_children(), directed=directed, vis_opts=vis_opts)
+        app.layout = get_app_layout(self.data, color_legends=self.get_color_popover_legend_children(),
+                                    directed=directed, vis_opts=vis_opts)
 
         # create callbacks to toggle legend popover
         @app.callback(
@@ -267,7 +299,7 @@ class Jaal:
             if n:
                 return not is_open
             return is_open
-        
+
         # create callbacks to toggle hide/show sections - COLOR section
         @app.callback(
             Output("color-show-toggle", "is_open"),
@@ -294,17 +326,21 @@ class Jaal:
         @app.callback(
             [Output('graph', 'data'), Output('color-legend-popup', 'children')],
             [Input('search_graph', 'value'),
-            Input('filter_nodes', 'value'),
-            Input('filter_edges', 'value'),
+             Input('filter_nodes', 'value'),
+             Input('filter_edges', 'value'),
              Input('add_related_entities', 'checked'),
-            Input('color_nodes', 'value'),
-            Input('color_edges', 'value'),
-            Input('size_nodes', 'value'),
-            Input('size_edges', 'value')],
+             Input('include_related_org', 'checked'),
+             Input('include_related_wf', 'checked'),
+             Input('include_related_tables', 'checked'),
+             Input('color_nodes', 'value'),
+             Input('color_edges', 'value'),
+             Input('size_nodes', 'value'),
+             Input('size_edges', 'value')],
             [State('graph', 'data')]
         )
         def setting_pane_callback(search_text, filter_nodes_text, filter_edges_text, add_related_entities,
-                    color_nodes_value, color_edges_value, size_nodes_value, size_edges_value, graph_data):
+                                  include_related_org, include_related_wf, include_related_tables,
+                                  color_nodes_value, color_edges_value, size_nodes_value, size_edges_value, graph_data):
 
             # fetch the id of option which triggered
             ctx = dash.callback_context
@@ -319,17 +355,23 @@ class Jaal:
                 if input_id == "search_graph":
                     graph_data = self._callback_search_graph(graph_data, search_text)
                 # In case filter nodes was triggered
-                elif input_id == 'filter_nodes':
-                    graph_data = self._callback_filter_nodes(graph_data, filter_nodes_text, add_related_entities)
+                elif (
+                        input_id == 'filter_nodes' or input_id == 'add_related_entities' or input_id == 'include_related_org'
+                        or input_id == 'include_related_wf' or input_id == 'include_related_tables'):
+                    graph_data = self._callback_filter_nodes(graph_data, filter_nodes_text, add_related_entities,
+                                                             include_related_org, include_related_wf,
+                                                             include_related_tables)
                 # In case filter edges was triggered
                 elif input_id == 'filter_edges':
                     graph_data = self._callback_filter_edges(graph_data, filter_edges_text)
                 # If color node text is provided
                 if input_id == 'color_nodes':
-                    graph_data, self.node_value_color_mapping = self._callback_color_nodes(graph_data, color_nodes_value)
+                    graph_data, self.node_value_color_mapping = self._callback_color_nodes(graph_data,
+                                                                                           color_nodes_value)
                 # If color edge text is provided
                 if input_id == 'color_edges':
-                    graph_data, self.edge_value_color_mapping = self._callback_color_edges(graph_data, color_edges_value)
+                    graph_data, self.edge_value_color_mapping = self._callback_color_edges(graph_data,
+                                                                                           color_edges_value)
                 # If size node text is provided
                 if input_id == 'size_nodes':
                     graph_data = self._callback_size_nodes(graph_data, size_nodes_value)
@@ -337,9 +379,11 @@ class Jaal:
                 if input_id == 'size_edges':
                     graph_data = self._callback_size_edges(graph_data, size_edges_value)
             # create the color legend childrens
-            color_popover_legend_children = self.get_color_popover_legend_children(self.node_value_color_mapping, self.edge_value_color_mapping)
+            color_popover_legend_children = self.get_color_popover_legend_children(self.node_value_color_mapping,
+                                                                                   self.edge_value_color_mapping)
             # finally return the modified data
             return [graph_data, color_popover_legend_children]
+
         # return server
         return app
 

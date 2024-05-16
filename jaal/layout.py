@@ -128,6 +128,12 @@ filter_node_form = dbc.FormGroup([
         ]),
         color="secondary",
     ),
+    dbc.FormText(
+            html.P([
+                "It might take up to 15 seconds to apply the filter. Please be patient."
+            ]),
+            color="secondary",
+        ),
 ])
 
 filter_edge_form = dbc.FormGroup([
@@ -145,8 +151,17 @@ filter_edge_form = dbc.FormGroup([
 
 include_related_entities = dbc.FormGroup([
     # dbc.Label("Filter edges", html_for="filter_edges"),
-    dbc.Checkbox(id="add_related_entities", checked=True, name="mne veoooo"),
-        " Include related entities",
+    dbc.Checkbox(id="add_related_entities", checked=True),
+        " Include related entities. Showing:"
+])
+
+related_entities_visibility = dbc.FormGroup([
+    dbc.Checkbox(id="include_related_org", checked=True),
+        " Organizations   ",
+    dbc.Checkbox(id="include_related_wf", checked=True),
+        " Workflows   ",
+    dbc.Checkbox(id="include_related_tables", checked=True),
+        " Tables",
 ])
 
 def get_select_form_layout(id, options, label, description):
@@ -223,7 +238,8 @@ def get_app_layout(graph_data, color_legends=[], directed=False, vis_opts=None):
     encoded_image = base64.b64encode(open(image_filename, 'rb').read())
     return html.Div([
             # create_row(html.H2(children="Jaal")), # Title
-            create_row(html.Img(src='data:image/png;base64,{}'.format(encoded_image.decode()), width="80px")),
+            create_row(html.H2("Data Platform - Oozie dependencies graph")),
+            create_row(html.P("Select 'type' in the combos 'Color <element> by' to better visualization")),
             create_row([
                 dbc.Col([
                     # setting panel
@@ -240,9 +256,10 @@ def get_app_layout(graph_data, color_legends=[], directed=False, vis_opts=None):
                         ], {**fetch_flex_row_style(), 'margin-left': 0, 'margin-right':0, 'justify-content': 'space-between'}),
                         dbc.Collapse([
                             html.Hr(className="my-2"),
+                            include_related_entities,
+                            related_entities_visibility,
                             filter_node_form,
                             filter_edge_form,
-                            include_related_entities,
                         ], id="filter-show-toggle", is_open=True),
                         
                         # ---- color section ----
